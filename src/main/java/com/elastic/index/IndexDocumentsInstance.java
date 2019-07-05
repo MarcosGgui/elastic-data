@@ -19,23 +19,43 @@ import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
 
 /**
+ * Index elasticsearch document
+ *
  * @author Marcos Gui
  * @date 2019-07-03
  */
-public class IndexEsDocument {
+public class IndexDocumentsInstance {
 
-  private static final Log log = LogFactory.getLog(IndexEsDocument.class);
+  private static final Log log = LogFactory.getLog(IndexDocumentsInstance.class);
 
-  private static int BULK_ACTIONS = 10000;
+  /**
+   * bulk action: size of `IndexRequest` add to the bulk processor Defaults to 1000
+   */
+  private static int BULK_ACTIONS = 1000;
 
+  /**
+   * bulk size: size of actions currently added, defaults to 5MB
+   */
   private static long BULK_SIZE = 5;
 
+  /**
+   * concurrent request: number of concurrent requests allowed to be executed
+   */
   private static int CONCURRENT_REQUESTS = 1;
 
+  /**
+   * flash interval: defaults not to set
+   */
   private static long FLASH_INTERVAL = 5000;
 
+  /**
+   * constant backoff policy: initially waits for 1 second and retries 3 times
+   */
   private static long CONSTANT_BACKOFF_DELAY = 1000;
 
+  /**
+   * times of retries
+   */
   private static int MAX_NUMBER_OF_RETRIES = 3;
 
   private static BulkProcessor processor;
@@ -53,8 +73,8 @@ public class IndexEsDocument {
     });
   }
 
-  public void bulkIndex(String esIndex, List<Map<?,?>> docList) {
-    docList.forEach( doc -> processor.add(new IndexRequest(esIndex).source(doc, XContentType.JSON)));
+  public void bulkIndex(String esIndex, List<Map<?, ?>> docList) {
+    docList.forEach(doc -> processor.add(new IndexRequest(esIndex).source(doc, XContentType.JSON)));
   }
 
   public void buildProcessor() {
@@ -65,7 +85,8 @@ public class IndexEsDocument {
        */
       @Override
       public void beforeBulk(long executionId, BulkRequest request) {
-
+        int actionNumber = request.numberOfActions();
+        log.debug("Executing bulk [" + executionId + "] with " + actionNumber + " requests");
       }
 
       /**
@@ -73,7 +94,11 @@ public class IndexEsDocument {
        */
       @Override
       public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
-
+        if (response.hasFailures()) {
+          log.warn("Bulk [" + executionId + "] executed with failures");
+        } else {
+          log.debug("Bulk [" + executionId + "] completed in " + response.getTook().getMillis() + " milliseconds");
+        }
       }
 
       /**
@@ -81,6 +106,7 @@ public class IndexEsDocument {
        */
       @Override
       public void afterBulk(long executionId, BulkRequest request, Throwable failure) {
+        log.error("Fail to execute bulk " + failure);
       }
     };
     BulkProcessor.Builder builder = BulkProcessor.builder((bulkRequest, bulkListener) -> ClientFactory.client
@@ -91,9 +117,12 @@ public class IndexEsDocument {
         .setConcurrentRequests(CONCURRENT_REQUESTS)
         .setBackoffPolicy(BackoffPolicy
             .constantBackoff(TimeValue.timeValueMillis(CONSTANT_BACKOFF_DELAY), MAX_NUMBER_OF_RETRIES));
-    processor =  builder.build();
+    processor = builder.build();
   }
 
+  /**
+   * Configure the bulk executions
+   */
   public void buildBulkOptions(int bulkActions, int concurrentRequests, long bulkSize, long flushInterval,
       long constantBackoffDelay, int maxNumberOfRetries) {
     BULK_ACTIONS = bulkActions;
